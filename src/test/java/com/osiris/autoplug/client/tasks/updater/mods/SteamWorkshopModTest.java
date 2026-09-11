@@ -9,6 +9,7 @@
 package com.osiris.autoplug.client.tasks.updater.mods;
 
 import com.osiris.autoplug.client.configs.ModsConfig;
+import com.osiris.autoplug.client.configs.GeneralConfig;
 import com.osiris.autoplug.client.configs.UpdaterConfig;
 import com.osiris.autoplug.client.utils.GD;
 import com.osiris.autoplug.client.utils.SteamCMD;
@@ -30,11 +31,58 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class SteamWorkshopModTest {
 
     @TempDir
     Path tempDir;
+
+    @Test
+    void invalidProfilesNeverDownloadOrInstall() throws Exception {
+        File modDir = tempDir.resolve("@CF").toFile();
+        modDir.mkdirs();
+        SteamWorkshopMod mod = new SteamWorkshopMod(modDir, "CF", "1559212036");
+        for (String profile : Arrays.asList(null, "", "automatic", "AUTOMATC")) {
+            FakeSteamCMD steamCMD = new FakeSteamCMD("200", tempDir.toFile());
+            TaskSteamWorkshopModDownload task = new TaskSteamWorkshopModDownload("Workshop", new BThreadManager(),
+                    mod, "221100", profile, steamCMD, null);
+            assertThrows(IllegalArgumentException.class, task::runAtStart);
+            assertEquals(0, steamCMD.updateCalls);
+            assertFalse(task.isDownloadSuccessful());
+            assertFalse(task.isInstallSuccessful());
+        }
+    }
+
+    @Test
+    void notifyProfileNeverDownloads() throws Exception {
+        FakeSteamCMD steamCMD = new FakeSteamCMD("200", tempDir.toFile());
+        TaskSteamWorkshopModDownload task = new TaskSteamWorkshopModDownload("Workshop", new BThreadManager(),
+                new SteamWorkshopMod(tempDir.toFile(), "CF", "1559212036"), "221100", "NOTIFY", steamCMD, null);
+        task.runAtStart();
+        assertEquals(0, steamCMD.updateCalls);
+        assertFalse(task.isDownloadSuccessful());
+        assertFalse(task.isInstallSuccessful());
+    }
+
+    @Test
+    void manualProfileLeavesInstalledFilesUntouched() throws Exception {
+        File modDir = tempDir.resolve("@CF").toFile();
+        modDir.mkdirs();
+        Path installed = modDir.toPath().resolve("content.txt");
+        Files.write(installed, Arrays.asList("old"), StandardCharsets.UTF_8);
+        File downloadDir = tempDir.resolve("cache").toFile();
+        downloadDir.mkdirs();
+        Files.write(downloadDir.toPath().resolve("content.txt"), Arrays.asList("new"), StandardCharsets.UTF_8);
+        FakeSteamCMD steamCMD = new FakeSteamCMD("200", downloadDir);
+        TaskSteamWorkshopModDownload task = new TaskSteamWorkshopModDownload("Workshop", new BThreadManager(),
+                new SteamWorkshopMod(modDir, "CF", "1559212036"), "221100", "MANUAL", steamCMD, null);
+        task.runAtStart();
+        assertEquals(1, steamCMD.updateCalls);
+        assertEquals("old", Files.readAllLines(installed, StandardCharsets.UTF_8).get(0));
+        assertTrue(task.isDownloadSuccessful());
+        assertFalse(task.isInstallSuccessful());
+    }
 
     @Test
     void readsPublishedIdAndNameFromMetaCpp() throws Exception {
@@ -101,6 +149,7 @@ class SteamWorkshopModTest {
             assertEquals("1559212036", modsConfig.get("mods", "CF", "steam-workshop-id").asString());
             assertEquals("200", modsConfig.get("mods", "CF", "version").asString());
         } finally {
+            AL.stop();
             System.setProperty("user.dir", oldUserDir);
             GD.WORKING_DIR = oldWorkingDir;
             GD.DOWNLOADS_DIR = oldDownloadsDir;
@@ -142,6 +191,7 @@ class SteamWorkshopModTest {
             assertEquals("1559212036", modsConfig.get("mods", "CF", "steam-workshop-id").asString());
             assertEquals("200", modsConfig.get("mods", "CF", "version").asString());
         } finally {
+            AL.stop();
             System.setProperty("user.dir", oldUserDir);
             GD.WORKING_DIR = oldWorkingDir;
             GD.DOWNLOADS_DIR = oldDownloadsDir;
@@ -170,11 +220,16 @@ class SteamWorkshopModTest {
     }
 
     private void configureUpdater(String cachedWorkshopVersion, String serverAppId) throws Exception {
+        // A non-JAR dedicated server fixture; this file is never executed.
+        Files.write(tempDir.resolve("DayZServer_x64.exe"), new byte[0]);
+        GeneralConfig generalConfig = new GeneralConfig();
+        generalConfig.server_start_command.setValues("./DayZServer_x64.exe");
+        generalConfig.save();
         UpdaterConfig updaterConfig = new UpdaterConfig();
         updaterConfig.mods_updater.setValues("true");
         updaterConfig.mods_updater_profile.setValues("AUTOMATIC");
         updaterConfig.mods_updater_path.setValues("./mods");
-        updaterConfig.mods_updater_version.setValues("1.20.1");
+        // DayZ has neither a Minecraft version override nor a server JAR.
         updaterConfig.mods_updater_async.setValues("false");
         updaterConfig.server_software.setValues(serverAppId);
         updaterConfig.save();
