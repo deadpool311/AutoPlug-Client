@@ -47,6 +47,9 @@ public class TaskSteamWorkshopModDownload extends BThread implements ModDownload
     public void runAtStart() throws Exception {
         super.runAtStart();
 
+        if (!"NOTIFY".equals(profile) && !"MANUAL".equals(profile) && !"AUTOMATIC".equals(profile))
+            throw new IllegalArgumentException("Unknown mods updater profile: " + profile);
+
         if (profile.equals("NOTIFY")) {
             setStatus("Your profile doesn't allow downloads! Profile: " + profile);
             finish(false);

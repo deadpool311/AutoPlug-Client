@@ -206,9 +206,7 @@ public class TaskModsUpdater extends BThread {
         int sizeSteamWorkshopMods = 0;
 
 
-        String mcVersion = updaterConfig.mods_updater_version.asString();
-        if (mcVersion == null) updaterConfig.server_updater_version.asString();
-        if (mcVersion == null) mcVersion = Server.getMCVersion();
+        String mcVersion = null;
 
         ExecutorService executorService;
         if (updaterConfig.mods_updater_async.asBoolean())
@@ -235,6 +233,11 @@ public class TaskModsUpdater extends BThread {
                     activeFutures.add(executorService.submit(() -> new ResourceFinder().findByGithubUrl(mod)));
                 } else {
                     sizeUnknownMods++; // MODRINTH OR CURSEFORGE MOD
+                    if (mcVersion == null) {
+                        mcVersion = updaterConfig.mods_updater_version.asString();
+                        if (mcVersion == null) mcVersion = updaterConfig.server_updater_version.asString();
+                        if (mcVersion == null) mcVersion = Server.getMCVersion();
+                    }
                     mod.ignoreContentType = true; // TODO temporary workaround for xamazon-json content type curseforge/bukkit issue: https://github.com/Osiris-Team/AutoPlug-Client/issues/109
                     String finalMcVersion = mcVersion;
                     activeFutures.add(executorService.submit(() -> new ResourceFinder().findByModrinthOrCurseforge(modLoader, mod, finalMcVersion, updaterConfig.mods_update_check_name_for_mod_loader.asBoolean())));
